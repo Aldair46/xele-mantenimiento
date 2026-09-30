@@ -1,0 +1,46 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function conSesion() {
+      return request.auth != null;
+    }
+
+    // Los dueños se definen en el documento ajustes/roles, campo "duenos" (lista de correos).
+    function esDueno() {
+      return conSesion()
+        && exists(/databases/$(database)/documents/ajustes/roles)
+        && request.auth.token.email.lower() in get(/databases/$(database)/documents/ajustes/roles).data.duenos;
+    }
+
+    // Ajustes (horas de operación) y roles: todos leen, solo el dueño modifica.
+    match /ajustes/{id} {
+      allow read: if conSesion();
+      allow write: if esDueno();
+    }
+
+    // Fallas: cualquier usuario con sesión reporta; solo el dueño gestiona (estado, costo, cierre).
+    match /fallas/{id} {
+      allow read: if conSesion();
+      allow create: if conSesion()
+        && request.resource.data.estado == 'reportada'
+        && request.resource.data.descripcion is string
+        && request.resource.data.descripcion.size() <= 1000;
+      allow update, delete: if esDueno();
+    }
+
+    // Fotos de las fallas (imagen comprimida guardada como texto).
+    match /fotos/{id} {
+      allow read: if conSesion();
+      allow create: if conSesion()
+        && request.resource.data.data is string
+        && request.resource.data.data.size() < 900000;
+      allow update, delete: if esDueno();
+    }
+
+    // Registro del plan preventivo por periodo: el personal marca sus tareas.
+    match /ejecuciones/{id} {
+      allow read, write: if conSesion();
+    }
+  }
+}

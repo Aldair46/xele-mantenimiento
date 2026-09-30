@@ -1,0 +1,15 @@
+{
+  "name": "xele-mantenimiento",
+  "version": "2.0.0",
+  "private": true,
+  "description": "Sistema de gestión de mantenimiento preventivo para las máquinas del Gimnasio Xele Fitness",
+  "scripts": {
+    "login": "firebase login",
+    "dev": "firebase serve --only hosting --port 5000",
+    "deploy": "firebase deploy --only hosting,firestore:rules,firestore:indexes",
+    "deploy:web": "firebase deploy --only hosting"
+  },
+  "devDependencies": {
+    "firebase-tools": "^13.0.0"
+  }
+}
