@@ -1,7 +1,4 @@
-import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
-import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, signOut, sendPasswordResetEmail } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-import { getFirestore, collection, doc, getDoc, setDoc, updateDoc, onSnapshot, query, orderBy, limit } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
-import { firebaseConfig } from "./firebase-config.js";
+// Versión sin servidor: los datos se guardan en el navegador de este dispositivo (localStorage).
 import { MAQ, FREQS, FREQ_PERIODO } from "./datos.js";
 
 const PHOTOS = Object.fromEntries(MAQ.map(m => [m.c, `img/${m.c}.jpg`]));
@@ -10,7 +7,7 @@ const TASKS = {}; FREQS.forEach(([f])=>{TASKS[f]=[];MAQ.forEach(m=>(m.plan[f]||[
 
 /* ---------- state ---------- */
 const S = {view:"panel", ficha:null, freq:"diario", filtro:"abiertas", fallas:[], ejec:{}, ajustes:{horasDia:14},
-  owner:false, verComo:null, name:"", uid:null, email:"", db:null, auth:null, mode:"loading", loginErr:"", sel:null, fotos:{}, toast:null,
+  owner:false, verComo:null, name:"", uid:null, email:"", db:null, auth:null, mode:"local", loginErr:"", sel:null, fotos:{}, toast:null,
   form:null, ro:false, unsubs:[], periodKeys:{}};
 try{ S.name = localStorage.getItem("xele_nombre")||""; }catch(e){}
 const isDueno = ()=> S.owner && S.verComo!=="trabajador";
@@ -78,19 +75,7 @@ const I = {
 /* ---------- render ---------- */
 const root=document.getElementById("root");
 const NAV=[["panel","Panel",I.panel],["maquinas","Máquinas",I.maq],["plan","Plan",I.plan],["fallas","Fallas",I.falla]];
-function vLogin(){
-  return `<div class="login"><form class="card" id="login-form" novalidate>
-    <div class="brand">XELE<span>Fitness · Mantenimiento</span></div>
-    <p class="muted" style="margin:0">Ingresa con el correo y la contraseña que te dio el administrador.</p>
-    ${S.loginErr?`<div class="err" role="alert">${esc(S.loginErr)}</div>`:""}
-    <label class="f">Correo <input type="email" id="l-email" autocomplete="email" required value="${esc(S.email)}"></label>
-    <label class="f">Contraseña <input type="password" id="l-pass" autocomplete="current-password" required></label>
-    <button class="btn primary" type="submit">Ingresar</button>
-    <button class="btn ghost sm" type="button" data-act="olvide">Olvidé mi contraseña</button>
-  </form><div id="toast"></div></div>`;
-}
 function render(){
-  if(S.mode==="login"){ root.innerHTML=vLogin(); renderToast(); return }
   const M=metrics();
   const abiertas=M.abiertas;
   const nav=NAV.map(([k,l,ic])=>`<button data-go="${k}" ${S.view===k||(k==="maquinas"&&S.view==="ficha")?'aria-current="page"':""}>${ic}<span>${l}</span>${k==="fallas"&&abiertas?`<span class="badge b-brand">${abiertas}</span>`:""}</button>`).join("");
@@ -111,7 +96,7 @@ function render(){
       <div class="brand">XELE<span>Fitness · Mantenimiento</span></div>
       <nav class="nav">${nav}${ajustesBtn}</nav>
       <button class="btn primary report" data-go="reportar">${I.cam} Reportar una falla</button>
-      <div class="rail-foot"><div class="who">${esc(S.name||"Sin nombre")}</div><div>${isDueno()?"Dueño / administración":"Personal de sala"}</div>${S.mode==="live"?`<button class="linkbtn" data-act="salir">Cerrar sesión</button>`:""}</div>
+      <div class="rail-foot"><div class="who">${esc(S.name||"Sin nombre")}</div><div>${isDueno()?"Dueño / administración":"Personal de sala"}</div></div>
     </aside>
     <main>${banner()}${body}</main>
   </div>
@@ -123,7 +108,7 @@ function render(){
 }
 function banner(){
   if(S.mode==="loading") return `<div class="banner">Conectando con la base de datos…</div>`;
-  if(S.mode==="local") return `<div class="banner">Modo demostración: los cambios no se guardan. Completa <b>public/js/firebase-config.js</b> para conectar la base de datos (ver README).</div>`;
+  if(S.mode==="local" && !S.avisoVisto) return `<div class="banner" style="display:flex;gap:12px;align-items:center;justify-content:space-between">Los datos se guardan solo en este navegador y dispositivo. <button class="btn sm" data-act="aviso">Entendido</button></div>`;
   if(S.ro) return `<div class="banner">Tu usuario no tiene permiso para guardar este cambio. Pide al dueño que revise tu acceso.</div>`;
   return "";
 }
@@ -258,9 +243,8 @@ function vAjustes(){
     ${S.owner?`<label class="f">Horas de operación del gimnasio por día <small>Se usa para las horas operativas de cada máquina.</small><input type="number" id="a-horas" min="1" max="24" step="0.5" value="${esc(S.ajustes.horasDia)}"></label>`:""}
     <label class="f">Tu nombre en este dispositivo <input type="text" id="a-nombre" value="${esc(S.name)}"></label>
     ${S.owner?`<div class="toggle"><input type="checkbox" id="a-vista" ${S.verComo==="trabajador"?"checked":""} style="accent-color:var(--brand)"><span><b>Ver como personal de sala</b><br><span class="small muted">Oculta las acciones de administración para revisar lo que ve un trabajador.</span></span></div>`:""}
-    <div style="display:flex;gap:10px;flex-wrap:wrap"><button class="btn primary" data-act="guardarajustes">Guardar ajustes</button>${S.mode==="live"?`<button class="btn ghost" data-act="salir">Cerrar sesión</button>`:""}</div>
-  </div>
-  ${S.mode==="live"?`<p class="small muted" style="margin-top:14px">Sesión iniciada como ${esc(S.email)}</p>`:""}`;
+    <div style="display:flex;gap:10px;flex-wrap:wrap"><button class="btn primary" data-act="guardarajustes">Guardar ajustes</button><button class="btn ghost" data-act="borrar">Borrar todos los datos</button></div>
+  </div>`;
 }
 
 /* ---------- modal: falla detail ---------- */
@@ -294,19 +278,14 @@ function renderModal(){
 function renderToast(){const el=document.getElementById("toast");if(el)el.innerHTML=S.toast?`<div class="toast" role="status">${esc(S.toast)}</div>`:""}
 
 /* ---------- photos ---------- */
-async function loadThumbs(){
-  if(!S.db) return;
-  document.querySelectorAll("[data-thumb]").forEach(async img=>{
-    const id=img.getAttribute("data-thumb"); if(S.fotos[id]){img.src=S.fotos[id];return}
-    if(loadThumbs.p[id]) return; loadThumbs.p[id]=1;
-    try{const s=await getDoc(doc(S.db,"fotos",id)); if(s.exists()){S.fotos[id]=s.data().data; document.querySelectorAll(`[data-thumb="${id}"]`).forEach(x=>x.src=S.fotos[id])}}catch(e){}
-  });
+function loadThumbs(){
+  document.querySelectorAll("[data-thumb]").forEach(img=>{ const id=img.getAttribute("data-thumb"); if(S.fotos[id]) img.src=S.fotos[id] });
 }
-loadThumbs.p={};
-function compress(file){
+
+function compress(file){ /* versión ligera para caber en el almacenamiento del navegador */
   return new Promise((res,rej)=>{const fr=new FileReader();fr.onerror=rej;fr.onload=()=>{const im=new Image();im.onerror=rej;im.onload=()=>{
-    let max=1100,q=.72,out="";
-    for(let k=0;k<6;k++){const sc=Math.min(1,max/Math.max(im.width,im.height));const c=document.createElement("canvas");c.width=Math.round(im.width*sc);c.height=Math.round(im.height*sc);c.getContext("2d").drawImage(im,0,0,c.width,c.height);out=c.toDataURL("image/jpeg",q);if(out.length<190000)break;max*=.8;q-=.06}
+    let max=900,q=.7,out="";
+    for(let k=0;k<6;k++){const sc=Math.min(1,max/Math.max(im.width,im.height));const c=document.createElement("canvas");c.width=Math.round(im.width*sc);c.height=Math.round(im.height*sc);c.getContext("2d").drawImage(im,0,0,c.width,c.height);out=c.toDataURL("image/jpeg",q);if(out.length<110000)break;max*=.8;q-=.06}
     res(out)};im.src=fr.result};fr.readAsDataURL(file)});
 }
 
@@ -320,21 +299,13 @@ function syncForm(){
   if(g("f-nombre")) S.form.nombre=g("f-nombre").value;
 }
 function go(v){ if(v!=="reportar") S.form=null; S.view=v; render(); window.scrollTo(0,0) }
-async function write(fn){
-  if(S.mode!=="live"){ return true }
-  try{ await fn(); return true }catch(e){
-    console.error(e);
-    if(e&&e.code==="permission-denied"){S.ro=true;toast("No tienes permiso para guardar este cambio");render()}
-    else if(e&&e.code==="resource-exhausted") toast("Se alcanzó el límite diario del plan gratuito de Firebase");
-    else toast("No se pudo guardar. Revisa tu conexión e inténtalo de nuevo");
-    return false }
-}
+async function write(){ return guardarLocal() }
 async function toggleTask(id){
   const f=id.split("-")[3]; const key=periodKey(f); const cur=(S.ejec[f]&&S.ejec[f].tasks)||{};
   const entry = cur[id]?null:{por:S.name||"Personal",uid:S.uid||null,at:Date.now()};
   if(cur[id] && !isDueno() && cur[id].uid && cur[id].uid!==S.uid){toast("Solo quien la marcó o el dueño puede desmarcarla");return}
   S.ejec[f]={...(S.ejec[f]||{}),key,tasks:{...cur,[id]:entry}}; render();
-  await write(()=>setDoc(doc(S.db,"ejecuciones",`${f}_${key}`),{freq:f,key,tasks:{[id]:entry}},{merge:true}));
+  await write();
 }
 async function enviar(){
   syncForm(); const fm=S.form; const m=MAQ_BY[fm.maquina];
@@ -344,13 +315,13 @@ async function enviar(){
   S.name=fm.nombre.trim(); try{localStorage.setItem("xele_nombre",S.name)}catch(e){}
   const id=newId("F"); const now=Date.now();
   const data={maquina:m.c,componente:fm.componente||"",descripcion:fm.descripcion.trim().slice(0,1000),prioridad:fm.prioridad||(m.crit==="Alta"?"Alta":"Media"),
-    fueraServicio:!!fm.fuera,estado:"reportada",fecha:now,reportadoPor:S.name,reportadoId:S.uid||null,reportadoEmail:S.email||null,hasFoto:!!fm.foto,
+    fueraServicio:!!fm.fuera,estado:"reportada",fecha:now,reportadoPor:S.name,reportadoId:S.uid||null,hasFoto:!!fm.foto,
     accion:"",tecnico:"",repuestos:"",horasParada:null,costo:null,fechaCierre:null};
   const btn=document.querySelector('[data-act="enviar"]'); if(btn){btn.disabled=true;btn.textContent="Enviando…"}
   if(fm.foto) S.fotos[id]=fm.foto;
-  const ok=await write(async()=>{ if(fm.foto) await setDoc(doc(S.db,"fotos",id),{data:fm.foto,falla:id}); await setDoc(doc(S.db,"fallas",id),data) });
+  const ok=true;
   if(!ok){ if(btn){btn.disabled=false;btn.textContent="Enviar reporte al dueño"} return }
-  if(S.mode!=="live") S.fallas=[{id,...data},...S.fallas];
+  if(S.mode!=="live"){ S.fallas=[{id,...data},...S.fallas]; guardarLocal() }
   S.form=null; toast("Reporte enviado"); go("fallas");
 }
 async function guardarFalla(resolver, nuevoEstado){
@@ -363,7 +334,7 @@ async function guardarFalla(resolver, nuevoEstado){
   if(estado==="resuelta"){ patch.fechaCierre=f.fechaCierre||Date.now(); if(patch.horasParada==null) patch.horasParada=0; patch.fueraServicio=false }
   else patch.fechaCierre=null;
   Object.assign(f,patch);
-  const ok=await write(()=>updateDoc(doc(S.db,"fallas",f.id),patch));
+  const ok=await write();
   if(ok){ toast(estado==="resuelta"&&resolver?"Falla marcada como resuelta":"Cambios guardados"); if(resolver) S.sel=null }
   render();
 }
@@ -399,58 +370,43 @@ document.addEventListener("click",async e=>{
   if(d.act==="guardarfalla"){ guardarFalla(false); return }
   if(d.act==="resolver"){ guardarFalla(true); return }
   if(d.act==="csv"){ exportCSV(); return }
-  if(d.act==="salir"){ await signOut(S.auth); return }
-  if(d.act==="olvide"){ const em=document.getElementById("l-email").value.trim(); S.email=em;
-    if(!em){ S.loginErr="Escribe tu correo y vuelve a tocar «Olvidé mi contraseña»."; render(); return }
-    try{ await sendPasswordResetEmail(S.auth,em); S.loginErr=""; render(); toast("Te enviamos un correo para restablecer la contraseña") }catch(e){ S.loginErr="No se pudo enviar el correo. Revisa que esté bien escrito."; render() } return }
+  if(d.act==="aviso"){ S.avisoVisto=true; try{localStorage.setItem("xele_aviso","1")}catch(e){} render(); return }
+  if(d.act==="borrar"){ if(!confirm("¿Borrar todas las fallas, fotos y tareas registradas en este dispositivo? No se puede deshacer.")) return;
+    ["xele_datos","xele_fotos"].forEach(k=>{try{localStorage.removeItem(k)}catch(e){}}); S.fallas=[]; S.fotos={}; EJEC={}; cargarEjecVigente(); toast("Datos borrados"); render(); return }
   if(d.act==="guardarajustes"){
     const h=Math.min(24,Math.max(1,+(document.getElementById("a-horas")?.value)||+S.ajustes.horasDia||14));
     const nm=document.getElementById("a-nombre").value.trim(); S.name=nm; try{localStorage.setItem("xele_nombre",nm)}catch(e){}
     if(S.owner){ S.verComo=document.getElementById("a-vista").checked?"trabajador":null;
-      if(h!==+S.ajustes.horasDia){ S.ajustes={...S.ajustes,horasDia:h}; await write(()=>setDoc(doc(S.db,"ajustes","general"),{horasDia:h},{merge:true})) } }
+      if(h!==+S.ajustes.horasDia){ S.ajustes={...S.ajustes,horasDia:h}; await write() } }
     toast("Ajustes guardados"); render(); return }
 });
 document.addEventListener("change",async e=>{
   if(e.target.id==="f-foto"&&e.target.files[0]){ syncForm(); try{ S.form.foto=await compress(e.target.files[0]); render() }catch(err){ toast("No se pudo leer la imagen") } }
 });
-document.addEventListener("submit",async e=>{
-  if(e.target.id!=="login-form") return; e.preventDefault();
-  const em=document.getElementById("l-email").value.trim(), pw=document.getElementById("l-pass").value;
-  S.email=em; const btn=e.target.querySelector('[type="submit"]'); btn.disabled=true; btn.textContent="Ingresando…";
-  try{ await signInWithEmailAndPassword(S.auth,em,pw) }
-  catch(err){ S.loginErr = /invalid-credential|wrong-password|user-not-found|invalid-email/.test(err.code) ? "Correo o contraseña incorrectos." : err.code==="auth/too-many-requests" ? "Demasiados intentos. Espera unos minutos." : "No se pudo ingresar. Revisa tu conexión."; render() }
-});
 document.addEventListener("keydown",e=>{ if(e.key==="Escape"&&S.sel){S.sel=null;renderModal()} });
 
 /* ---------- data ---------- */
-function subscribeEjec(){
-  S.unsubs.forEach(u=>u()); S.unsubs=[];
-  FREQS.forEach(([f])=>{ const key=periodKey(f); S.periodKeys[f]=key; S.ejec[f]={key,tasks:{}};
-    S.unsubs.push(onSnapshot(doc(S.db,"ejecuciones",`${f}_${key}`),s=>{ const d=s.exists()?s.data():null; S.ejec[f]={key,tasks:Object.fromEntries(Object.entries((d&&d.tasks)||{}).filter(([,v])=>v))}; schedule() },err=>console.error(err))) });
-}
 let rt=null; function schedule(){ if(rt||S.mode==="login") return; rt=requestAnimationFrame(()=>{rt=null; const a=document.activeElement; const typing=a&&/INPUT|TEXTAREA|SELECT/.test(a.tagName); if(typing){ if(S.sel) return; if(S.view==="reportar"||S.view==="ajustes") return } render() }) }
-let dataUnsubs=[];
-function stopData(){ dataUnsubs.forEach(u=>u()); dataUnsubs=[]; S.unsubs.forEach(u=>u()); S.unsubs=[] }
-function startData(){
-  const db=S.db;
-  dataUnsubs.push(onSnapshot(query(collection(db,"fallas"),orderBy("fecha","desc"),limit(1000)),s=>{ S.fallas=s.docs.map(d=>({id:d.id,...d.data()})); schedule() },err=>console.error(err)));
-  dataUnsubs.push(onSnapshot(doc(db,"ajustes","general"),s=>{ if(s.exists()) S.ajustes={horasDia:14,...s.data()}; schedule() },err=>console.error(err)));
-  dataUnsubs.push(onSnapshot(doc(db,"ajustes","roles"),s=>{ const d=s.exists()?s.data():{}; const duenos=(d.duenos||[]).map(x=>String(x).toLowerCase()); S.owner=duenos.includes((S.email||"").toLowerCase()); schedule() },()=>{ S.owner=false; schedule() }));
-  subscribeEjec();
+/* ---------- almacenamiento local ---------- */
+let EJEC={};  // { "diario_2026-09-30": {tasks:{...}}, ... }
+function cargarEjecVigente(){ FREQS.forEach(([f])=>{ const key=periodKey(f); S.periodKeys[f]=key; const t=(EJEC[`${f}_${key}`]||{}).tasks||{}; S.ejec[f]={key,tasks:Object.fromEntries(Object.entries(t).filter(([,v])=>v))} }) }
+function guardarLocal(){
+  FREQS.forEach(([f])=>{ if(S.ejec[f]) EJEC[`${f}_${S.ejec[f].key}`]={tasks:S.ejec[f].tasks} });
+  try{ localStorage.setItem("xele_datos",JSON.stringify({fallas:S.fallas,ajustes:S.ajustes,ejec:EJEC})) }
+  catch(e){ toast("No hay espacio suficiente en este navegador"); return false }
+  const ids=new Set(S.fallas.map(f=>f.id)); const fotos=Object.fromEntries(Object.entries(S.fotos).filter(([id])=>ids.has(id)));
+  try{ localStorage.setItem("xele_fotos",JSON.stringify(fotos)) }
+  catch(e){ toast("No hay espacio para más fotos: borra fallas antiguas o repórtalas sin foto"); }
+  return true;
 }
-function configurado(){ return firebaseConfig && firebaseConfig.apiKey && !String(firebaseConfig.apiKey).startsWith("PEGA_") }
+function cargarLocal(){
+  try{ const d=JSON.parse(localStorage.getItem("xele_datos")||"{}"); S.fallas=d.fallas||[]; S.ajustes={horasDia:14,...(d.ajustes||{})}; EJEC=d.ejec||{} }catch(e){}
+  try{ S.fotos=JSON.parse(localStorage.getItem("xele_fotos")||"{}") }catch(e){}
+  try{ S.avisoVisto=!!localStorage.getItem("xele_aviso") }catch(e){}
+  cargarEjecVigente();
+}
 function init(){
-  if(!configurado()){ S.mode="local"; S.owner=true; render(); return }
-  const app=initializeApp(firebaseConfig);
-  S.auth=getAuth(app); S.db=getFirestore(app);
-  render();
-  onAuthStateChanged(S.auth,u=>{
-    stopData();
-    if(!u){ S.mode="login"; S.fallas=[]; S.ejec={}; S.owner=false; S.sel=null; S.view="panel"; render(); return }
-    S.uid=u.uid; S.email=u.email||""; S.loginErr="";
-    if(!S.name) S.name=u.displayName||(u.email||"").split("@")[0];
-    S.mode="live"; S.ro=false; startData(); render();
-  });
-  setInterval(()=>{ if(S.mode==="live"&&FREQS.some(([f])=>periodKey(f)!==S.periodKeys[f])) subscribeEjec(); schedule() },60000);
+  S.owner=true; cargarLocal(); render();
+  setInterval(()=>{ if(FREQS.some(([f])=>periodKey(f)!==S.periodKeys[f])){ cargarEjecVigente() } schedule() },60000);
 }
 init();
